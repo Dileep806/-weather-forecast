@@ -1,0 +1,95 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <curl/curl.h>
+#include <cjson/cJSON.h>
+
+// Function to handle the response data from libcurl
+size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    size_t realsize = size * nmemb;
+    char *data = (char *)userp;
+    
+    strcat(data, contents);
+    return realsize;
+}
+
+// Function to make a request to the OpenWeatherMap API
+void get_weather_data(const char *url, char *response_data) {
+    CURL *curl;
+    CURLcode res;
+
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_data);
+        
+        res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            fprintf(stderr, "Error fetching data: %s\n", curl_easy_strerror(res));
+        }
+        
+        curl_easy_cleanup(curl);
+    }
+
+    curl_global_cleanup();
+}
+
+// Function to parse the weather data from the OpenWeatherMap response
+void parse_weather_data(const char *json_data) {
+    cJSON *json = cJSON_Parse(json_data);
+    if (json == NULL) {
+        printf("Error parsing JSON data\n");
+        return;
+    }
+
+    cJSON *weather_array = cJSON_GetObjectItemCaseSensitive(json, "weather");
+    cJSON *weather = cJSON_GetArrayItem(weather_array, 0);
+    cJSON *description = cJSON_GetObjectItemCaseSensitive(weather, "description");
+
+    cJSON *main_data = cJSON_GetObjectItemCaseSensitive(json, "main");
+    cJSON *temp = cJSON_GetObjectItemCaseSensitive(main_data, "temp");
+    cJSON *humidity = cJSON_GetObjectItemCaseSensitive(main_data, "humidity");
+
+    cJSON *wind_data = cJSON_GetObjectItemCaseSensitive(json, "wind");
+    cJSON *wind_speed = cJSON_GetObjectItemCaseSensitive(wind_data, "speed");
+
+    if (cJSON_IsString(description) && description->valuestring != NULL) {
+        printf("Weather Description: %s\n", description->valuestring);
+    }
+
+    if (cJSON_IsNumber(temp)) {
+        printf("Temperature: %.2f°C\n", temp->valuedouble - 273.15); // Convert from Kelvin to Celsius
+    }
+
+    if (cJSON_IsNumber(humidity)) {
+        printf("Humidity: %.0f%%\n", humidity->valuedouble);
+    }
+
+    if (cJSON_IsNumber(wind_speed)) {
+        printf("Wind Speed: %.2f m/s\n", wind_speed->valuedouble);
+    }
+
+    cJSON_Delete(json);
+}
+
+int main() {
+    const char *api_key = "YOUR_API_KEY";  // Replace with your OpenWeatherMap API key
+    const char *city = "London";  // Change to your desired city
+    char url[512];
+    char response_data[2048] = "";
+
+    // Construct URL for OpenWeatherMap API
+    snprintf(url, sizeof(url), "https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s", city, api_key);
+
+    // Fetch the weather data
+    get_weather_data(url, response_data);
+
+    // Parse and display the weather data
+    printf("Weather Data for %s:\n", city);
+    parse_weather_data(response_data);
+
+    return 0;
+}
